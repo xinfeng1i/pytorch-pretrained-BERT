@@ -37,14 +37,27 @@ logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(messa
 logger = logging.getLogger(__name__)
 
 
+###################################################################################################
+# 样本包括3个字段：
+# * text_a
+# * text_b
+# * unique_id 唯一标识符id
+###################################################################################################
 class InputExample(object):
-
     def __init__(self, unique_id, text_a, text_b):
         self.unique_id = unique_id
         self.text_a = text_a
         self.text_b = text_b
 
 
+###################################################################################################
+# 样本特征对象包括5个字段：
+# * unique_id 唯一标识符id
+# * tokens：tokens
+# * input_ids：tokens对应的id
+# * input_mask: 对于非padding部分mask为1，padding部分mask为0
+# * input_type_ids: 对于text_a部分标记为0，对于text_b部分标记为1 (指示是第一个序列还是第二个序列)
+###################################################################################################
 class InputFeatures(object):
     """A single set of features of data."""
 
@@ -56,6 +69,12 @@ class InputFeatures(object):
         self.input_type_ids = input_type_ids
 
 
+###################################################################################################
+#
+# 将样本转化为对应的特征，即
+# tokens ==> input_ids, input_mask, input_type_ids
+#
+###################################################################################################
 def convert_examples_to_features(examples, seq_length, tokenizer):
     """Loads a data file into a list of `InputFeature`s."""
 
@@ -67,6 +86,7 @@ def convert_examples_to_features(examples, seq_length, tokenizer):
         if example.text_b:
             tokens_b = tokenizer.tokenize(example.text_b)
 
+        # 按照最大长度进行截断
         if tokens_b:
             # Modifies `tokens_a` and `tokens_b` in place so that the total
             # length is less than the specified length.
@@ -95,6 +115,8 @@ def convert_examples_to_features(examples, seq_length, tokenizer):
         # For classification tasks, the first vector (corresponding to [CLS]) is
         # used as as the "sentence vector". Note that this only makes sense because
         # the entire model is fine-tuned.
+
+        # 构建tokens和type_ids
         tokens = []
         input_type_ids = []
         tokens.append("[CLS]")
@@ -112,12 +134,15 @@ def convert_examples_to_features(examples, seq_length, tokenizer):
             tokens.append("[SEP]")
             input_type_ids.append(1)
 
+        # 根据vocab将token转化为token_id
         input_ids = tokenizer.convert_tokens_to_ids(tokens)
 
+        # input_mask将非padding部分的mask为1，padding部分mask为0
         # The mask has 1 for real tokens and 0 for padding tokens. Only real
         # tokens are attended to.
         input_mask = [1] * len(input_ids)
 
+        # 到这里已经构建完成的变量有：tokens, input_type_ids, input_ids, input_mask
         # Zero-pad up to the sequence length.
         while len(input_ids) < seq_length:
             input_ids.append(0)
@@ -147,6 +172,12 @@ def convert_examples_to_features(examples, seq_length, tokenizer):
     return features
 
 
+###################################################################################################
+#
+# 对序列对(tokens_a, tokens_b)按照总长度进行截断，方法是：
+# 每次截断tokens_a，tokens_b中较长的一个丢弃一个token，直到总长度符合要求为止。
+#
+###################################################################################################
 def _truncate_seq_pair(tokens_a, tokens_b, max_length):
     """Truncates a sequence pair in place to the maximum length."""
 
@@ -176,7 +207,7 @@ def read_examples(input_file):
             line = line.strip()
             text_a = None
             text_b = None
-            m = re.match(r"^(.*) \|\|\| (.*)$", line)
+            m = re.match(r"^(.*) \|\|\| (.*)$", line)  # text_a和text_b之间以`|||`分割
             if m is None:
                 text_a = line
             else:
@@ -216,8 +247,9 @@ def main():
     args = parser.parse_args()
 
     if args.local_rank == -1 or args.no_cuda:
+        # 如果有cuda设备 & 没有设置no_cuda
         device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
-        n_gpu = torch.cuda.device_count()
+        n_gpu = torch.cuda.device_count()  # 获取GPU的数量
     else:
         device = torch.device("cuda", args.local_rank)
         n_gpu = 1
@@ -229,6 +261,8 @@ def main():
 
     tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case=args.do_lower_case)
 
+    #
+    # 从文件中读取样本列表
     examples = read_examples(args.input_file)
 
     features = convert_examples_to_features(
