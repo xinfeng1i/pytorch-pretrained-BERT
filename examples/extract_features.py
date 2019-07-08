@@ -261,10 +261,18 @@ def main():
 
     tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case=args.do_lower_case)
 
+    ###############################################################################################
     #
-    # 从文件中读取样本列表
+    # Step1: 从文件中读取样本列表
+    #
+    ###############################################################################################
     examples = read_examples(args.input_file)
 
+    ###############################################################################################
+    #
+    # Step2: 将样本转化为对应的特征
+    #
+    ###############################################################################################
     features = convert_examples_to_features(
         examples=examples, seq_length=args.max_seq_length, tokenizer=tokenizer)
 
@@ -272,6 +280,11 @@ def main():
     for feature in features:
         unique_id_to_feature[feature.unique_id] = feature
 
+    ###############################################################################################
+    #
+    # Step3: 加载Bert预训练模型 (Key Point)
+    #
+    ###############################################################################################
     model = BertModel.from_pretrained(args.bert_model)
     model.to(device)
 
@@ -285,6 +298,11 @@ def main():
     all_input_mask = torch.tensor([f.input_mask for f in features], dtype=torch.long)
     all_example_index = torch.arange(all_input_ids.size(0), dtype=torch.long)
 
+    ###############################################################################################
+    #
+    # Step4: 将特征数据转化为TensorDataset数据格式
+    #
+    ###############################################################################################
     eval_data = TensorDataset(all_input_ids, all_input_mask, all_example_index)
     if args.local_rank == -1:
         eval_sampler = SequentialSampler(eval_data)
@@ -292,6 +310,11 @@ def main():
         eval_sampler = DistributedSampler(eval_data)
     eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.batch_size)
 
+    ###############################################################################################
+    #
+    # Step5: 设置模型为Eval模式 (即模型参数不进行反向传播的更新操作)
+    #
+    ###############################################################################################
     model.eval()
     with open(args.output_file, "w", encoding='utf-8') as writer:
         for input_ids, input_mask, example_indices in eval_dataloader:
