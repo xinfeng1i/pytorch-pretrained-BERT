@@ -11,7 +11,9 @@ import numpy as np
 import json
 import collections
 
+
 class DocumentDatabase:
+
     def __init__(self, reduce_memory=False):
         if reduce_memory:
             self.temp_dir = TemporaryDirectory()
@@ -99,9 +101,17 @@ def truncate_seq_pair(tokens_a, tokens_b, max_num_tokens):
         else:
             trunc_tokens.pop()
 
+
 MaskedLmInstance = collections.namedtuple("MaskedLmInstance",
                                           ["index", "label"])
 
+
+###################################################################################################
+#
+# 输入Token序列，根据Mask概率等参数，将Token序列进行随机Mask并指定需要预测的label
+# 输出Mask后的token序列，以及对应的Mask位置和待预测label（原始token）
+#
+###################################################################################################
 def create_masked_lm_predictions(tokens, masked_lm_prob, max_predictions_per_seq, whole_word_mask, vocab_list):
     """Creates the predictions for the masked LM objective. This is mostly copied from the Google BERT repo, but
     with several refactors to clean it up and remove a lot of unnecessary variables."""
@@ -123,6 +133,7 @@ def create_masked_lm_predictions(tokens, masked_lm_prob, max_predictions_per_seq
         else:
             cand_indices.append([i])
 
+    # 如果seq有100个token，以masked_lm_prob=0.15的概率进行Mask，则需要mask 15个token
     num_to_mask = min(max_predictions_per_seq,
                       max(1, int(round(len(tokens) * masked_lm_prob))))
     shuffle(cand_indices)
@@ -156,7 +167,10 @@ def create_masked_lm_predictions(tokens, masked_lm_prob, max_predictions_per_seq
                 # 10% of the time, replace with random word
                 else:
                     masked_token = choice(vocab_list)
+
+            # 记录第index个位置的的原始token为label
             masked_lms.append(MaskedLmInstance(index=index, label=tokens[index]))
+            # 同时，将token的第index个位置放置为mask_token
             tokens[index] = masked_token
 
     assert len(masked_lms) <= num_to_mask
