@@ -225,12 +225,17 @@ def main():
         # The modulo takes into account the fact that we may loop over limited epochs of data
         total_train_examples += samples_per_epoch[i % len(samples_per_epoch)]
 
+    # 梯度更新的次数
     num_train_optimization_steps = int(
         total_train_examples / args.train_batch_size / args.gradient_accumulation_steps)
     if args.local_rank != -1:
         num_train_optimization_steps = num_train_optimization_steps // torch.distributed.get_world_size()
 
-    # Prepare model
+    ###############################################################################################
+    #
+    #  Step1: 导入预训练的BERT模型
+    #
+    ###############################################################################################
     model = BertForPreTraining.from_pretrained(args.bert_model)
     if args.fp16:
         model.half()
@@ -245,7 +250,11 @@ def main():
     elif n_gpu > 1:
         model = torch.nn.DataParallel(model)
 
-    # Prepare optimizer
+    ###############################################################################################
+    #
+    # Step2: 准备优化器
+    #
+    ###############################################################################################
     param_optimizer = list(model.named_parameters())
     no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
@@ -283,7 +292,19 @@ def main():
     logging.info(f"  Num examples = {total_train_examples}")
     logging.info("  Batch size = %d", args.train_batch_size)
     logging.info("  Num steps = %d", num_train_optimization_steps)
+
+    ###############################################################################################
+    #
+    # Step3: 设置模型为Train模式
+    #
+    ###############################################################################################
     model.train()
+
+    ###############################################################################################
+    #
+    # Step4: 开始优化参数（训练）
+    #
+    ###############################################################################################
     for epoch in range(args.epochs):
         epoch_dataset = PregeneratedDataset(epoch=epoch, training_path=args.pregenerated_data, tokenizer=tokenizer,
                                             num_data_epochs=num_data_epochs, reduce_memory=args.reduce_memory)
@@ -324,7 +345,11 @@ def main():
                     optimizer.zero_grad()
                     global_step += 1
 
-    # Save a trained model
+    ###############################################################################################
+    #
+    # Step5: 保存训练好的模型 (Config文件，Bin模型文件，Vocab文件)
+    #
+    ###############################################################################################
     logging.info("** ** * Saving fine-tuned model ** ** * ")
     model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
     
