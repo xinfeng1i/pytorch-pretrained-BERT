@@ -41,6 +41,17 @@ logger = logging.getLogger(__name__)
 
 
 class BERTDataset(Dataset):
+    ###############################################################################################
+    #
+    # 加载语料库数据，其中语料库数据格式为，每个doc之间的每个sentence占据单独的一行,多个doc之间以空行隔开
+    #
+    # Example:
+    #   This is first line of doc1
+    #   This is second line of doc1
+    #
+    #   This is first line of doc2
+    #   This is second line of doc2
+    ###############################################################################################
     def __init__(self, corpus_path, tokenizer, seq_len, encoding="utf-8", corpus_lines=None, on_memory=True):
         self.vocab = tokenizer.vocab
         self.tokenizer = tokenizer
@@ -157,6 +168,11 @@ class BERTDataset(Dataset):
         assert len(t2) > 0
         return t1, t2, label
 
+    ###############################################################################################
+    #
+    # 从语料库中选择同一个doc的连续两个句子作为Pair返回
+    #
+    ###############################################################################################
     def get_corpus_line(self, item):
         """
         Get one sample from corpus consisting of a pair of two subsequent lines from the same doc.
@@ -194,6 +210,11 @@ class BERTDataset(Dataset):
         assert t2 != ""
         return t1, t2
 
+    ###############################################################################################
+    #
+    # 返回语料库中的一个随机doc的一个随机行
+    #
+    ################################################################################################
     def get_random_line(self):
         """
         Get random line from another document for nextSentence task.
@@ -232,6 +253,12 @@ class BERTDataset(Dataset):
         return line
 
 
+###################################################################################################
+#
+# 样本类，一个样本包括：
+# 样本ID \t text_a \t text_b \t is_next \t lm_labels
+#
+###################################################################################################
 class InputExample(object):
     """A single training/test example for the language model."""
 
@@ -265,6 +292,14 @@ class InputFeatures(object):
         self.lm_label_ids = lm_label_ids
 
 
+###################################################################################################
+#
+# 对Token序列进行随机Mask，返回Mask后的序列，以及对应的trueLabel.
+# Example:
+# Input: ['who', 'was', 'jim', 'henson']
+# Ouput: ['who', '[MASK]', 'jim', 'henson'] and [-1, 34, -1, -1]
+#
+###################################################################################################
 def random_word(tokens, tokenizer):
     """
     Masking some random tokens for Language Model task with probabilities as in the original BERT paper.
@@ -304,6 +339,19 @@ def random_word(tokens, tokenizer):
     return tokens, output_label
 
 
+###################################################################################################
+#
+# 将一行样本转化为对应特征序列
+#
+# Input:
+#   样本ID \t text_a \t text_b \t is_next \t lm_labels
+# Output:
+#   input_ids    =  [20, 65, 66, 20, 97, 98, 99, 20, 0, 0]
+#   segments_ids =  [0, 0, 0, 0, 1, 1, 1, 1, 0, 0]
+#   input_mask   =  [1, 1, 1, 1, 1, 1, 1, 1, 0, 0]
+#   lm_labels    =  [-1, 34, -1, -1, -1, -1, -1, -1, -1, -1]
+#   is_next
+###################################################################################################
 def convert_example_to_features(example, max_seq_length, tokenizer):
     """
     Convert a raw sample (pair of sentences as tokenized strings) into a proper training sample with
@@ -320,6 +368,7 @@ def convert_example_to_features(example, max_seq_length, tokenizer):
     # Account for [CLS], [SEP], [SEP] with "- 3"
     _truncate_seq_pair(tokens_a, tokens_b, max_seq_length - 3)
 
+    # 对两个token序列进行随机Mask，并记录对应的true-token对应的token2id
     tokens_a, t1_label = random_word(tokens_a, tokenizer)
     tokens_b, t2_label = random_word(tokens_b, tokenizer)
     # concatenate lm labels and account for CLS, SEP, SEP
@@ -343,6 +392,25 @@ def convert_example_to_features(example, max_seq_length, tokenizer):
     # For classification tasks, the first vector (corresponding to [CLS]) is
     # used as as the "sentence vector". Note that this only makes sense because
     # the entire model is fine-tuned.
+
+    ###########################################################################
+    # 将两个token序列进行concat操作:
+    # Input:
+    # tokens_a: ["a", "b"]
+    # tokens_b: ["x", "y", "z"]
+    #
+    # Output:
+    # tokens       =  ["[CLS]", "a", "b", "[SEP]", "x", "y", "z", "[SEP]"]
+    # input_ids    =  [ 20, 65, 66, 20, 97, 98, 99, 20]
+    # segments_ids =  [0, 0, 0, 0, 1, 1, 1, 1]
+    # input_mask   =  [1, 1, 1, 1, 1, 1, 1, 1]
+    #
+    # PADDING操作:
+    # input_ids    =  [20, 65, 66, 20, 97, 98, 99, 20, 0, 0]
+    # segments_ids =  [0, 0, 0, 0, 1, 1, 1, 1, 0, 0]
+    # input_mask   =  [1, 1, 1, 1, 1, 1, 1, 1, 0, 0]
+    # lm_labels     =  [-1, 34, -1, -1, -1, -1, -1, -1, -1, -1]
+    ###########################################################################
     tokens = []
     segment_ids = []
     tokens.append("[CLS]")
@@ -507,6 +575,11 @@ def main():
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
 
+    ###############################################################################################
+    #
+    # Step1: 加载Bert Tokenizer
+    #
+    ###############################################################################################
     tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case=args.do_lower_case)
 
     #train_examples = None
@@ -520,6 +593,11 @@ def main():
         if args.local_rank != -1:
             num_train_optimization_steps = num_train_optimization_steps // torch.distributed.get_world_size()
 
+    ###############################################################################################
+    #
+    # Step2: 加载Bert预训练Model
+    #
+    ###############################################################################################
     # Prepare model
     model = BertForPreTraining.from_pretrained(args.bert_model)
     if args.fp16:
@@ -534,6 +612,11 @@ def main():
     elif n_gpu > 1:
         model = torch.nn.DataParallel(model)
 
+    ###############################################################################################
+    #
+    # Step3: 加载优化器
+    #
+    ###############################################################################################
     # Prepare optimizer
     if args.do_train:
         param_optimizer = list(model.named_parameters())
@@ -582,6 +665,11 @@ def main():
             train_sampler = DistributedSampler(train_dataset)
         train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
 
+        ###########################################################################################
+        #
+        # Step4: 开始训练模型
+        #
+        ###########################################################################################
         model.train()
         for _ in trange(int(args.num_train_epochs), desc="Epoch"):
             tr_loss = 0
@@ -612,6 +700,11 @@ def main():
                     optimizer.zero_grad()
                     global_step += 1
 
+        ###########################################################################################
+        #
+        # Step5: 保存模型
+        #
+        ###########################################################################################
         # Save a trained model
         logger.info("** ** * Saving fine - tuned model ** ** * ")
         model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
