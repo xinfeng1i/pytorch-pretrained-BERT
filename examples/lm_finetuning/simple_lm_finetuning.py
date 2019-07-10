@@ -121,6 +121,11 @@ class BERTDataset(Dataset):
         # last line of doc won't be used, because there's no "nextSentence". Additionally, we start counting at 0.
         return self.corpus_lines - self.num_docs - 1
 
+    ###############################################################################################
+    #
+    # 获取一个样本的训练用的Tensor
+    #
+    ###############################################################################################
     def __getitem__(self, item):
         cur_id = self.sample_counter
         self.sample_counter += 1
@@ -130,6 +135,7 @@ class BERTDataset(Dataset):
                 self.file.close()
                 self.file = open(self.corpus_path, "r", encoding=self.encoding)
 
+        # 随机获取一对句子pair，50%的概率两个句子是连续句子，50%的概率text_b是随机的句子
         t1, t2, is_next_label = self.random_sent(item)
 
         # tokenize
